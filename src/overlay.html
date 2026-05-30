@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100vw; height: 100vh; background: transparent; overflow: hidden; }
+    canvas { position: absolute; top: 0; left: 0; }
+  </style>
+</head>
+<body>
+  <canvas id="lens"></canvas>
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const canvas = document.getElementById('lens');
+    const ctx = canvas.getContext('2d');
+
+    let zoom = 3;
+    let lensSize = 200;
+    let shape = 'circle';
+    let mouseX = 0;
+    let mouseY = 0;
+    let video = null;
+    let started = false;
+
+    // Retina: canvas backing store in physical pixels, drawn in logical pixels
+    const dpr = window.devicePixelRatio || 1;
+    const SW = window.screen.width;
+    const SH = window.screen.height;
+
+    canvas.width  = SW * dpr;
+    canvas.height = SH * dpr;
+    canvas.style.width  = SW + 'px';
+    canvas.style.height = SH + 'px';
+    ctx.scale(dpr, dpr);
+
+    // Mouse position is polled by main process and pushed here
+    ipcRenderer.on('mouse-pos', (_, pt) => {
+      mouseX = pt.x;
+      mouseY = pt.y;
+    });
+
+    ipcRenderer.on('config', (_, cfg) => {
+      zoom     = cfg.zoom;
+      lensSize = cfg.lensSize;
+      shape    = cfg.shape;
+    });
+
+    ipcRenderer.on('start-capture', () => {
+      startCapture();
+    });
+
+    async function startCapture() {
+      try {
+        // Modern capture path. The main process resolves the source via
+        // setDisplayMediaRequestHandler. cursor: 'never' keeps the OS cursor out
+        // of the feed, and content protection on the overlay window keeps the
+        // overlay itself out — so no cursor inside the lens and no recursive zoom.
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          audio: false,
+          video: { cursor: 'never' },
+        });
+
+        video = document.createElement('video');
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = true;
+        await video.play();
+
+        if (!started) { started = true; drawLoop(); }
+      } catch (err) {
+        ipcRenderer.send('capture-error', err.message);
+      }
+    }
+
+    function drawLoop() {
+      requestAnimationFrame(drawLoop);
+      if (!video || video.readyState < 2) return;
+
+      ctx.clearRect(0, 0, SW, SH);
+
+      const half   = lensSize / 2;
+      const dstX   = mouseX - half;
+      const dstY   = mouseY - half;
+
+      // Map logical screen coords → video pixel coords
+      // desktopCapturer video is in physical pixels on Retina
+      const vidW = video.videoWidth  || SW * dpr;
+      const vidH = video.videoHeight || SH * dpr;
+      const scaleX = vidW / SW;
+      const scaleY = vidH / SH;
+
+      const srcLogW = lensSize / zoom;
+      const srcLogH = lensSize / zoom;
+      const srcX = (mouseX - srcLogW / 2) * scaleX;
+      const srcY = (mouseY - srcLogH / 2) * scaleY;
+      const srcW = srcLogW * scaleX;
+      const srcH = srcLogH * scaleY;
+
+      ctx.save();
+
+      // Lens clip
+      ctx.beginPath();
+      if (shape === 'circle') {
+        ctx.arc(mouseX, mouseY, half, 0, Math.PI * 2);
+      } else {
+        ctx.rect(dstX, dstY, lensSize, lensSize);
+      }
+      ctx.clip();
+
+      // Magnified content. The OS cursor is excluded from the capture stream
+      // (getDisplayMedia cursor: 'never'), so nothing to erase here.
+      ctx.drawImage(video, srcX, srcY, srcW, srcH, dstX, dstY, lensSize, lensSize);
+
+      // Draw a clean crosshair at the lens centre so the user still has a precise
+      // reference point for where the (now-hidden) cursor is.
+      const cursorLensX = mouseX;  // centre of lens = cursor position
+      const cursorLensY = mouseY;
+
+      // Crosshair — white with dark outline for contrast on any background
+      const ch = 14;
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cursorLensX - ch, cursorLensY);
+      ctx.lineTo(cursorLensX + ch, cursorLensY);
+      ctx.moveTo(cursorLensX, cursorLensY - ch);
+      ctx.lineTo(cursorLensX, cursorLensY + ch);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cursorLensX - ch, cursorLensY);
+      ctx.lineTo(cursorLensX + ch, cursorLensY);
+      ctx.moveTo(cursorLensX, cursorLensY - ch);
+      ctx.lineTo(cursorLensX, cursorLensY + ch);
+      ctx.stroke();
+
+      ctx.restore();
+
+      // Lens border
+      ctx.strokeStyle = 'rgba(80, 140, 255, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      if (shape === 'circle') {
+        ctx.arc(mouseX, mouseY, half, 0, Math.PI * 2);
+      } else {
+        ctx.rect(dstX, dstY, lensSize, lensSize);
+      }
+      ctx.stroke();
+    }
+
+    window.addEventListener('wheel', (e) => {
+      ipcRenderer.send('scroll-zoom', e.deltaY < 0 ? 1 : -1);
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === '+' || e.key === '=') ipcRenderer.send('key-zoom', 1);
+      if (e.key === '-') ipcRenderer.send('key-zoom', -1);
+    });
+  </script>
+</body>
+</html>

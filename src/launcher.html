@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f0f17;
+      color: #fff;
+      width: 400px;
+      height: 340px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 28px 32px;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    button, input { -webkit-app-region: no-drag; }
+
+    .icon { font-size: 40px; line-height: 1; }
+    h1 { font-size: 20px; font-weight: 600; }
+
+    /* ── shortcut row ── */
+    .shortcut-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .shortcut-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .shortcut-label { font-size: 11px; color: rgba(255,255,255,0.4); }
+    .shortcut-edit-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #shortcutDisplay {
+      flex: 1;
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-size: 13px;
+      color: #fff;
+      font-family: inherit;
+      outline: none;
+      cursor: pointer;
+      text-align: center;
+    }
+    #shortcutDisplay.listening {
+      border-color: #508cff;
+      background: rgba(80,140,255,0.12);
+      color: rgba(255,255,255,0.55);
+    }
+    #shortcutDisplay.error {
+      border-color: #ff6b6b;
+      background: rgba(255,107,107,0.1);
+      color: #ff6b6b;
+    }
+    .edit-btn {
+      padding: 6px 12px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 7px;
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .edit-btn:hover { background: rgba(255,255,255,0.15); }
+
+    /* ── main toggle button ── */
+    .btn {
+      padding: 11px 0;
+      background: #508cff;
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      width: 100%;
+    }
+    .btn:hover { background: #3a78f0; }
+    .btn.stop { background: rgba(255,80,80,0.75); }
+    .btn.stop:hover { background: rgba(255,80,80,1); }
+
+    .status { font-size: 11px; color: rgba(255,255,255,0.3); text-align: center; line-height: 1.5; }
+
+    .error-box {
+      font-size: 11px;
+      color: #ff6b6b;
+      background: rgba(255,107,107,0.1);
+      border: 1px solid rgba(255,107,107,0.25);
+      border-radius: 6px;
+      padding: 8px 12px;
+      text-align: center;
+      line-height: 1.5;
+      display: none;
+      width: 100%;
+    }
+    .error-box.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="icon">🔍</div>
+  <h1>Zchuchit Magnifier</h1>
+
+  <div class="shortcut-section">
+    <div class="shortcut-label-row">
+      <span class="shortcut-label">TOGGLE SHORTCUT</span>
+      <span class="shortcut-label" id="shortcutHint">click to record new shortcut</span>
+    </div>
+    <div class="shortcut-edit-row">
+      <div id="shortcutDisplay" tabindex="0"></div>
+      <button class="edit-btn" id="editBtn">Change</button>
+    </div>
+  </div>
+
+  <button class="btn" id="toggleBtn">Start Magnifier</button>
+
+  <div class="error-box" id="errorBox"></div>
+  <span class="status" id="status">Close this window to keep running in the tray</span>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const toggleBtn      = document.getElementById('toggleBtn');
+    const status         = document.getElementById('status');
+    const errorBox       = document.getElementById('errorBox');
+    const shortcutDisplay = document.getElementById('shortcutDisplay');
+    const editBtn        = document.getElementById('editBtn');
+    const shortcutHint   = document.getElementById('shortcutHint');
+
+    let listening = false;
+    let heldKeys  = new Set();
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    // Convert a KeyboardEvent into an Electron accelerator string
+    function eventToAccelerator(e) {
+      const parts = [];
+      if (e.ctrlKey  || e.key === 'Control') parts.push('Ctrl');
+      if (e.metaKey  || e.key === 'Meta')    parts.push('Command');
+      if (e.altKey   || e.key === 'Alt')     parts.push('Alt');
+      if (e.shiftKey || e.key === 'Shift')   parts.push('Shift');
+
+      const ignore = new Set(['Control','Meta','Alt','Shift','Dead']);
+      if (!ignore.has(e.key)) {
+        const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+        parts.push(key);
+      }
+      return parts.join('+');
+    }
+
+    // Pretty-print an Electron accelerator for display
+    function prettyAccelerator(acc) {
+      const isMac = navigator.platform.startsWith('Mac');
+      return acc
+        .replace('CommandOrControl', isMac ? '⌘' : 'Ctrl')
+        .replace('Command', '⌘')
+        .replace('Ctrl', isMac ? '⌃' : 'Ctrl')
+        .replace('Shift', isMac ? '⇧' : 'Shift')
+        .replace('Alt', isMac ? '⌥' : 'Alt')
+        .replace(/\+/g, isMac ? '' : '+');
+    }
+
+    function setShortcutDisplay(acc) {
+      shortcutDisplay.textContent = prettyAccelerator(acc);
+      shortcutDisplay.classList.remove('listening', 'error');
+    }
+
+    // ── load initial config ──────────────────────────────────────────────────
+    ipcRenderer.invoke('get-config').then(cfg => {
+      setShortcutDisplay(cfg.shortcut);
+    });
+
+    // ── shortcut recording ───────────────────────────────────────────────────
+    function startListening() {
+      listening = true;
+      heldKeys.clear();
+      shortcutDisplay.textContent = 'Press keys…';
+      shortcutDisplay.classList.add('listening');
+      shortcutDisplay.classList.remove('error');
+      editBtn.textContent = 'Cancel';
+      shortcutHint.textContent = 'hold modifier + key, then release';
+    }
+
+    function stopListening() {
+      listening = false;
+      editBtn.textContent = 'Change';
+      shortcutHint.textContent = 'click to record new shortcut';
+    }
+
+    editBtn.addEventListener('click', () => {
+      if (listening) {
+        stopListening();
+        // Restore current shortcut display
+        ipcRenderer.invoke('get-config').then(cfg => setShortcutDisplay(cfg.shortcut));
+      } else {
+        startListening();
+      }
+    });
+
+    shortcutDisplay.addEventListener('click', () => {
+      if (!listening) startListening();
+    });
+
+    // Capture keydown while listening — build accelerator from held keys
+    window.addEventListener('keydown', (e) => {
+      if (!listening) return;
+      e.preventDefault();
+      e.stopPropagation();
+      heldKeys.add(e.key);
+
+      const acc = eventToAccelerator(e);
+      if (acc && !['Ctrl','Command','Alt','Shift','CommandOrControl'].includes(acc)) {
+        shortcutDisplay.textContent = prettyAccelerator(acc);
+      }
+    }, true);
+
+    window.addEventListener('keyup', (e) => {
+      if (!listening) return;
+      e.preventDefault();
+
+      const acc = eventToAccelerator(e);
+      // Only submit if it has at least one modifier + a non-modifier key
+      const hasModifier = e.ctrlKey || e.metaKey || e.altKey || e.shiftKey ||
+                          heldKeys.has('Control') || heldKeys.has('Meta') ||
+                          heldKeys.has('Alt') || heldKeys.has('Shift');
+      const mainKeys = [...heldKeys].filter(k => !['Control','Meta','Alt','Shift'].includes(k));
+
+      if (hasModifier && mainKeys.length > 0) {
+        stopListening();
+        ipcRenderer.send('set-shortcut', acc);
+      } else {
+        // Only modifiers released — wait for the main key
+        heldKeys.delete(e.key);
+      }
+    }, true);
+
+    ipcRenderer.on('shortcut-result', (_, { ok, accelerator }) => {
+      if (ok) {
+        setShortcutDisplay(accelerator);
+        shortcutHint.textContent = 'saved!';
+        setTimeout(() => { shortcutHint.textContent = 'click to record new shortcut'; }, 1500);
+      } else {
+        shortcutDisplay.textContent = 'Already in use — try another';
+        shortcutDisplay.classList.add('error');
+        shortcutDisplay.classList.remove('listening');
+        setTimeout(() => {
+          ipcRenderer.invoke('get-config').then(cfg => setShortcutDisplay(cfg.shortcut));
+        }, 2000);
+      }
+    });
+
+    // ── magnifier toggle ─────────────────────────────────────────────────────
+    toggleBtn.addEventListener('click', () => {
+      errorBox.classList.remove('visible');
+      ipcRenderer.send('toggle-magnifier');
+    });
+
+    ipcRenderer.on('magnifier-state', (_, active) => {
+      toggleBtn.textContent = active ? 'Stop Magnifier' : 'Start Magnifier';
+      toggleBtn.classList.toggle('stop', active);
+      status.textContent = active
+        ? 'Magnifier is active — move your mouse to magnify'
+        : 'Close this window to keep running in the tray';
+    });
+
+    ipcRenderer.on('capture-error', (_, msg) => {
+      errorBox.textContent =
+        'Screen capture failed. On macOS go to System Settings → Privacy & Security → ' +
+        'Screen Recording, allow this app, then restart it.\n\n(' + msg + ')';
+      errorBox.classList.add('visible');
+      toggleBtn.textContent = 'Start Magnifier';
+      toggleBtn.classList.remove('stop');
+      status.textContent = '';
+    });
+  </script>
+</body>
+</html>
