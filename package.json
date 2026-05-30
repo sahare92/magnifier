@@ -2,27 +2,37 @@
   "name": "zchuchit",
   "version": "1.0.0",
   "description": "Screen magnifier for visually impaired users",
+  "author": "Zchuchit",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win"
   },
-  "dependencies": {
-    "electron": "^28.3.3"
-  },
+  "dependencies": {},
   "devDependencies": {
+    "electron": "^28.3.3",
     "electron-builder": "^24.0.0"
   },
   "build": {
     "appId": "com.zchuchit.app",
     "productName": "Zchuchit",
+    "copyright": "Copyright © 2024 Zchuchit",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico",
+      "artifactName": "Zchuchit-Setup-${version}.exe"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Zchuchit Magnifier",
+      "runAfterFinish": true
     }
   }
 }
