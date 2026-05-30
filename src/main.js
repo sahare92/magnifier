@@ -4,6 +4,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const SHORTCUTS = require('./shortcuts');
 
 // ── macOS capture-path fix ──────────────────────────────────────────────────
 // On modern macOS, Electron captures the screen via Apple's ScreenCaptureKit.
@@ -30,7 +31,7 @@ const DEFAULT_CONFIG = {
   zoom: 3,
   lensSize: 200,
   shape: 'circle',
-  shortcut: 'CommandOrControl+Shift+M',
+  shortcut: SHORTCUTS.TOGGLE,
 };
 
 function loadConfig() {
@@ -146,7 +147,7 @@ async function showMagnifier() {
 
   createOverlay();
   createToolbar();
-  registerZoomShortcuts();
+  registerMagnifierShortcuts();
 
   // Windows are only starting to load now — did-finish-load will not have fired yet
   overlayWin.webContents.once('did-finish-load', () => {
@@ -166,7 +167,7 @@ async function showMagnifier() {
 
 function hideMagnifier() {
   magnifierActive = false;
-  unregisterZoomShortcuts();
+  unregisterMagnifierShortcuts();
   if (mousePollInterval) { clearInterval(mousePollInterval); mousePollInterval = null; }
   if (overlayWin) { overlayWin.destroy(); overlayWin = null; }
   if (toolbarWin) { toolbarWin.destroy(); toolbarWin = null; }
@@ -199,17 +200,18 @@ ipcMain.handle('get-config', () => config);
 ipcMain.on('scroll-zoom', (_, delta) => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', delta); });
 ipcMain.on('key-zoom', (_, delta) => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', delta); });
 
-const ZOOM_IN_SHORTCUT  = 'Shift+Plus';
-const ZOOM_OUT_SHORTCUT = 'Shift+-';
-
-function registerZoomShortcuts() {
-  globalShortcut.register(ZOOM_IN_SHORTCUT,  () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom',  1); });
-  globalShortcut.register(ZOOM_OUT_SHORTCUT, () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', -1); });
+function registerMagnifierShortcuts() {
+  globalShortcut.register(SHORTCUTS.ZOOM_IN,  () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom',  1); });
+  globalShortcut.register(SHORTCUTS.ZOOM_OUT, () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', -1); });
+  globalShortcut.register(SHORTCUTS.SIZE_INC, () => { if (toolbarWin) toolbarWin.webContents.send('do-size',  1); });
+  globalShortcut.register(SHORTCUTS.SIZE_DEC, () => { if (toolbarWin) toolbarWin.webContents.send('do-size', -1); });
 }
 
-function unregisterZoomShortcuts() {
-  globalShortcut.unregister(ZOOM_IN_SHORTCUT);
-  globalShortcut.unregister(ZOOM_OUT_SHORTCUT);
+function unregisterMagnifierShortcuts() {
+  globalShortcut.unregister(SHORTCUTS.ZOOM_IN);
+  globalShortcut.unregister(SHORTCUTS.ZOOM_OUT);
+  globalShortcut.unregister(SHORTCUTS.SIZE_INC);
+  globalShortcut.unregister(SHORTCUTS.SIZE_DEC);
 }
 ipcMain.on('toolbar-drag', (_, { dx, dy }) => {
   if (!toolbarWin) return;

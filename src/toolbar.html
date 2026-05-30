@@ -193,6 +193,11 @@
       sendUpdate({ zoom: parseFloat(newZoom.toFixed(1)) });
     });
 
+    ipcRenderer.on('do-size', (_, delta) => {
+      const newSize = Math.min(400, Math.max(100, config.lensSize + delta * 10));
+      sendUpdate({ lensSize: newSize });
+    });
+
     // Draggable toolbar
     let dragging = false;
     let dragOffX = 0, dragOffY = 0;
