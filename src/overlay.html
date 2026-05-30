@@ -113,31 +113,6 @@
       // (getDisplayMedia cursor: 'never'), so nothing to erase here.
       ctx.drawImage(video, srcX, srcY, srcW, srcH, dstX, dstY, lensSize, lensSize);
 
-      // Draw a clean crosshair at the lens centre so the user still has a precise
-      // reference point for where the (now-hidden) cursor is.
-      const cursorLensX = mouseX;  // centre of lens = cursor position
-      const cursorLensY = mouseY;
-
-      // Crosshair — white with dark outline for contrast on any background
-      const ch = 14;
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(cursorLensX - ch, cursorLensY);
-      ctx.lineTo(cursorLensX + ch, cursorLensY);
-      ctx.moveTo(cursorLensX, cursorLensY - ch);
-      ctx.lineTo(cursorLensX, cursorLensY + ch);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(cursorLensX - ch, cursorLensY);
-      ctx.lineTo(cursorLensX + ch, cursorLensY);
-      ctx.moveTo(cursorLensX, cursorLensY - ch);
-      ctx.lineTo(cursorLensX, cursorLensY + ch);
-      ctx.stroke();
-
       ctx.restore();
 
       // Lens border

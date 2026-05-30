@@ -146,6 +146,7 @@ async function showMagnifier() {
 
   createOverlay();
   createToolbar();
+  registerZoomShortcuts();
 
   // Windows are only starting to load now — did-finish-load will not have fired yet
   overlayWin.webContents.once('did-finish-load', () => {
@@ -165,6 +166,7 @@ async function showMagnifier() {
 
 function hideMagnifier() {
   magnifierActive = false;
+  unregisterZoomShortcuts();
   if (mousePollInterval) { clearInterval(mousePollInterval); mousePollInterval = null; }
   if (overlayWin) { overlayWin.destroy(); overlayWin = null; }
   if (toolbarWin) { toolbarWin.destroy(); toolbarWin = null; }
@@ -196,6 +198,19 @@ ipcMain.handle('get-config', () => config);
 
 ipcMain.on('scroll-zoom', (_, delta) => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', delta); });
 ipcMain.on('key-zoom', (_, delta) => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', delta); });
+
+const ZOOM_IN_SHORTCUT  = 'Shift+Plus';
+const ZOOM_OUT_SHORTCUT = 'Shift+-';
+
+function registerZoomShortcuts() {
+  globalShortcut.register(ZOOM_IN_SHORTCUT,  () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom',  1); });
+  globalShortcut.register(ZOOM_OUT_SHORTCUT, () => { if (toolbarWin) toolbarWin.webContents.send('do-zoom', -1); });
+}
+
+function unregisterZoomShortcuts() {
+  globalShortcut.unregister(ZOOM_IN_SHORTCUT);
+  globalShortcut.unregister(ZOOM_OUT_SHORTCUT);
+}
 ipcMain.on('toolbar-drag', (_, { dx, dy }) => {
   if (!toolbarWin) return;
   const [x, y] = toolbarWin.getPosition();
